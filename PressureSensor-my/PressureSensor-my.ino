@@ -52,8 +52,11 @@
 #define TEMP1_SHT_CHILD 2
 #define TEMP2_SHT_CHILD 3
 #define HUM0_SHT_CHILD 4
+#define BAR1_BMP_CHILD 5
 
-const float ALTITUDE = 587; // <-- adapt this value to your own location's altitude.
+const float ALTITUDE = 580; // <-- adapt this value to your own location's altitude. Sofia home
+float BMP_CAL = 2.2;
+float SHT_CAL = 1.27;
 
 // Sleep time between reads (in seconds). Do not change this value as the forecast algorithm needs a sample every minute.
 const unsigned long SLEEP_TIME = 60000; 
@@ -73,6 +76,7 @@ enum FORECAST
 Sodaq_BMP085 bmp;// = Adafruit_BMP085();      // Digital Pressure Sensor 
 
 float lastPressure = -1;
+float lastPressure_raw = -1;
 float lastTemp_bmp = -1;
 float lastTemp_sht = -1;
 float lastHum = -1;
@@ -97,6 +101,7 @@ float dP_dt;
 bool metric;
 MyMessage tempBMPMsg(TEMP0_BMP_CHILD, V_TEMP);
 MyMessage pressureBMPMsg(BARO_BMP_CHILD, V_PRESSURE);
+MyMessage pressureBMP_rawMsg(BAR1_BMP_CHILD, V_PRESSURE);
 MyMessage forecastBMPMsg(BARO_BMP_CHILD, V_FORECAST);
 MyMessage tempSHTMsg(TEMP1_SHT_CHILD, V_TEMP);
 MyMessage humSHTMsg(HUM0_SHT_CHILD, V_HUM);
@@ -104,7 +109,7 @@ MyMessage dewSHTMsg(TEMP2_SHT_CHILD, V_TEMP);
 
 void setup() 
 {
-  bmp.begin();
+  bmp.begin(BMP085_ULTRAHIGHRES);
 	/*if (!bmp.begin()) 
 	{
 		Serial.println("Could not find a valid BMP085 sensor, check wiring!");
@@ -119,6 +124,7 @@ void presentation()  {
 
   // Register sensors to gw (they will be created as child devices)
   present(BARO_BMP_CHILD, S_BARO, "Barometer");
+  present(BAR1_BMP_CHILD, S_BARO, "Barometer raw");
   present(TEMP0_BMP_CHILD, S_TEMP, "Temperature bmp");
   present(TEMP1_SHT_CHILD, S_TEMP, "Temperature sht" );
   present(HUM0_SHT_CHILD, S_HUM, "Humidity");
@@ -127,10 +133,10 @@ void presentation()  {
 
 void loop() 
 {
-	//float pressure = bmp.readPressure(ALTITUDE) / 100.0;
-  float pressure = bmp.readPressure() / 100.0;
-	float temperature_bmp = bmp.readTemperature();
-  float temperature_sht = SHT2x.GetTemperature();
+	float pressure = bmp.readPressure(ALTITUDE) / 100.0;
+  float pressure_raw = bmp.readPressure() / 100.0;
+	float temperature_bmp = bmp.readTemperature() + BMP_CAL;
+  float temperature_sht = SHT2x.GetTemperature() + SHT_CAL;
   float dew_sht = SHT2x.GetDewPoint();
   float hum_sht = SHT2x.GetHumidity();
   
@@ -151,6 +157,9 @@ void loop()
 	Serial.print("Pressure = ");
 	Serial.print(pressure);
 	Serial.println(" hPa");
+  Serial.print("Pressure raw = ");
+  Serial.print(pressure_raw);
+  Serial.println(" hPa");
 	Serial.print("Forecast = ");
 	Serial.println(weather[forecast]);
   Serial.print("Temperature SHT = ");
@@ -190,9 +199,14 @@ void loop()
 
 	if (pressure != lastPressure) 
 	{
-		send(pressureBMPMsg.set(pressure, 0));
+		send(pressureBMPMsg.set(pressure, 2));
 		lastPressure = pressure;
 	}
+  if (pressure_raw != lastPressure_raw) 
+  {
+    send(pressureBMP_rawMsg.set(pressure_raw, 2));
+    lastPressure = pressure;
+  }
 
 	if (forecast != lastForecast)
 	{
@@ -200,7 +214,8 @@ void loop()
 		lastForecast = forecast;
 	}
 
-	smartSleep(SLEEP_TIME);
+	//smartSleep(SLEEP_TIME);
+  wait(SLEEP_TIME);
 }
 
 float getLastPressureSamplesAverage()
@@ -349,12 +364,19 @@ int sample(float pressure)
 	}
 
 	// uncomment when debugging
-	//Serial.print(F("Forecast at minute "));
-	//Serial.print(minuteCount);
-	//Serial.print(F(" dP/dt = "));
-	//Serial.print(dP_dt);
-	//Serial.print(F("kPa/h --> "));
-	//Serial.println(weather[forecast]);
+ #ifdef DEBUG_PRINT
+	Serial.print(F("Forecast at minute "));
+	Serial.print(minuteCount);
+	Serial.print(F(" dP/dt = "));
+	Serial.print(dP_dt);
+	Serial.print(F("kPa/h --> "));
+	Serial.println(weather[forecast]);
+  Serial.print(F("Pressure average "));
+  Serial.print(pressureAvg);
+  Serial.print(F(" Pressure average 2 "));
+  Serial.println(pressureAvg2);
+  
+ #endif
 
 	return forecast;
 }
