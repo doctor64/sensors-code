@@ -1,35 +1,14 @@
 /**
- * The MySensors Arduino library handles the wireless radio link and protocol
- * between your home built sensors/actuators and HA controller of choice.
- * The sensors forms a self healing radio network with optional repeaters. Each
- * repeater and gateway builds a routing tables in EEPROM which keeps track of the
- * network topology allowing messages to be routed to nodes.
- *
- * Created by Henrik Ekblad <henrik.ekblad@mysensors.org>
- * Copyright (C) 2013-2015 Sensnology AB
- * Full contributor list: https://github.com/mysensors/Arduino/graphs/contributors
- *
- * Documentation: http://www.mysensors.org
- * Support Forum: http://forum.mysensors.org
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- *******************************
- *
- * REVISION HISTORY
- * Version 1.0 - Henrik Ekblad
- * 
  * DESCRIPTION
- * Pressure sensor example using BMP085 module  
- * http://www.mysensors.org/build/pressure
+ * Basic sensor for DevDuino4 board
  *
  */
 
 // Enable debug prints to serial monitor
-#define MY_DEBUG 
-#define DEBUG_PRINT
+//#define MY_DEBUG 
+//#define DEBUG_PRINT
+#define MY_SPECIAL_DEBUG
+#define MY_BAUD_RATE 57600
 
 // Enable and select radio type attached
 #define MY_RADIO_NRF24
@@ -38,20 +17,23 @@
 #define MY_RF24_CS_PIN 7
 //#define MY_RF24_PA_LEVEL RF24_PA_LOW
 #define MY_RF24_CHANNEL  113
-//#define MY_NODE_ID 2
+#define MY_NODE_ID 2
 
 // Pin definitions
 #define DUINO4_LED 9
 #define DUINO4_BUTTON 4
 
 // How many milli seconds between each measurement
-#define MEASURE_INTERVAL 50000//50000 //for Real Work 50 sec for internal use Home
+#define MEASURE_INTERVAL 60000
+#define HEARTBEAT_INTERVAL 30
+float TEMP_CAL = 0.6;
+int HUM_CAL = 9;
 
 // FORCE_TRANSMIT_INTERVAL, this number of times of wakeup, the sensor is forced to report all values to the controller
 #define FORCE_TRANSMIT_INTERVAL 30 
 
 #define SKETCH_NAME "devDuino4 basic Sensor"
-#define SKETCH_VERSION "1.4"
+#define SKETCH_VERSION "1.7"
 
 #include <SPI.h>
 #include <MySensors.h>  
@@ -77,7 +59,7 @@ bool metric;
 //#define LED_BLINK_WAIT_TRANSMIT  //turn off for external use (Street)
 
 #define TEMP_TRANSMIT_THRESHOLD 0.5
-#define HUMI_TRANSMIT_THRESHOLD 2//0.5
+#define HUMI_TRANSMIT_THRESHOLD 1//0.5
 
 MyMessage tempHTUMsg(TEMP0_HTU_CHILD, V_TEMP);
 MyMessage humHTUMsg(HUM0_HTU_CHILD, V_HUM);
@@ -107,6 +89,7 @@ long lastBattery = 0;
 float sendVCC; 
 #define AVERAGES 5
 RunningAverage raHum(AVERAGES);
+int cycles;
 
 void setup() 
 {
@@ -151,6 +134,7 @@ void setup()
   wait(500);
   send(msgBatt.set(sendVCC,2));
   digitalWrite(DUINO4_LED, LOW);
+  cycles=1;
 	
 }
 
@@ -164,7 +148,7 @@ void presentation()  {
   //present(BUTTON_CHILD, S_BINARY, "Button");
   present(LED_CHILD, S_BINARY,"LED");
 #ifdef BATT_CHILD
-   present(BATT_CHILD, S_MULTIMETER, "VOLT");
+   present(BATT_CHILD, S_MULTIMETER, "Batt Volt");
 #endif    
 }  
 
@@ -199,8 +183,14 @@ void loop()
      sendBattery = 0;
   }
 
-	//smartSleep(MEASURE_INTERVAL);
-  sleep(MEASURE_INTERVAL);
+	if (cycles==HEARTBEAT_INTERVAL) {
+    cycles=1;
+    smartSleep(MEASURE_INTERVAL);
+	}
+  else {
+    cycles++;
+    sleep(MEASURE_INTERVAL);
+  }
 	//sleep(/*digitalPinToInterrupt(2)*/0, RISING , MEASURE_INTERVAL);
   //wait(MEASURE_INTERVAL);
 }
@@ -235,8 +225,10 @@ void sendTempHumidityMeasurements(bool force)
   bool tx1 = force;
 
   //get the Temperature and Humidity from the onboard sensor.
-  float temp = htu.readTemperature();
-  int humidity = htu.readHumidity();
+  float temp = htu.readTemperature()+TEMP_CAL;
+  int humidity = htu.readHumidity()+HUM_CAL;
+  //Serial.print("hum:");
+  //Serial.println(humidity);
   if (!metric) 
   {
     // Convert to fahrenheit
